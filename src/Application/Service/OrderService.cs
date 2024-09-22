@@ -28,17 +28,11 @@ public class OrderService
         };
 
         var validationResult = await _orderValidator.ValidateAsync(order);
-
         if (!validationResult.IsValid)
-        {           
-            var errors = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage));
-            return Result.Failure<Order>($"Erro na validação do pedido: {errors}");
-        }
+            return Result.Failure<Order>($"Erro na validação do pedido: {string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage))}");
 
         order.Process();
-
         _orderState.AddOrder(order);
-        await Task.Delay(10); // Simulando uma operação assíncrona
 
         _logger.LogInformation("Pedido {OrderId} realizado com sucesso. Detalhes do pedido: {@Order}", order.Id, order);
         return Result.Success(order);
@@ -46,26 +40,24 @@ public class OrderService
 
     public async Task<Result> ProcessPaymentAsync(int orderId, IPaymentStrategy paymentStrategy, bool usePolly)
     {
-        var maybeOrder = await GetOrderByIdAsync(orderId);
-        if (maybeOrder.HasNoValue)
+        var order = await GetOrderByIdAsync(orderId).ContinueWith(t => t.Result.Value);
+
+        if (order == null)
             return Result.Failure("Pedido não encontrado.");
 
-        var order = maybeOrder.Value;
-
-        if (order.State is ProcessingPaymentState processingPaymentState)
+        if (order.State is not ProcessingPaymentState processingPaymentState)
         {
-            return await processingPaymentState.ProcessAsync(order, paymentStrategy, usePolly);
+            _logger.LogInformation("Pedido {OrderId} não está em um estado válido para processamento de pagamento. Detalhes do pedido: {@Order}", order.Id, order);
+            return Result.Failure("O pedido não está em um estado válido para processamento de pagamento.");
         }
 
-        _logger.LogInformation("Pedido {OrderId} não está em um estado válido para processamento de pagamento. Detalhes do pedido: {@Order}", order.Id, order);
-        return Result.Failure("O pedido não está em um estado válido para processamento de pagamento.");
+        return await processingPaymentState.ProcessAsync(order, paymentStrategy, usePolly);
     }
 
-    public async Task<Maybe<Order>> GetOrderByIdAsync(int id)
+    public Task<Maybe<Order>> GetOrderByIdAsync(int id)
     {
-        await Task.Delay(10); // Simulando uma operação assíncrona
         var order = _orderState.GetOrders().FirstOrDefault(o => o.Id == id);
-        return Maybe.From(order);
+        return Task.FromResult(Maybe.From(order));
     }
 
     public async Task<Result<IEnumerable<Order>>> GetAllOrdersAsync()
