@@ -5,6 +5,7 @@ using CleanArchitecture.Domain.State;
 using CSharpFunctionalExtensions;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -26,7 +27,9 @@ public class OrderServiceTests
 
         var orderStateMock = new Mock<OrderState>();
 
-        _orderService = new OrderService(loggerMock.Object, _orderValidatorMock.Object, orderStateMock.Object);
+        var memoryCacheMock = new Mock<IMemoryCache>();
+
+        _orderService = new OrderService(loggerMock.Object, _orderValidatorMock.Object, orderStateMock.Object, memoryCacheMock.Object);
     }
 
     [Fact]
