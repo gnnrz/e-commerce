@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Domain.Interface;
+﻿using Castle.Core.Logging;
+using CleanArchitecture.Domain.Interface;
 using CSharpFunctionalExtensions;
 using Polly;
 using Polly.Retry;
@@ -16,7 +17,6 @@ public class ProcessingPaymentState : IOrderState
             .WaitAndRetryAsync(_attempts, retryAttempt => TimeSpan.FromSeconds(2),
                 (exception, timeSpan, retryCount, context) =>
                 {
-                    // Logando a tentativa de retry
                     Console.WriteLine($"Tentativa {retryCount} falhou: {exception.Message}. Tentando novamente em {timeSpan.TotalSeconds} segundos.");
                 });
     }
@@ -25,14 +25,17 @@ public class ProcessingPaymentState : IOrderState
     {
         if (usePolly)
         {
+            int retryCount = 0;
             return await _retryPolicy.ExecuteAsync(async () =>
             {
+                retryCount++;
+
                 var paymentResult = await paymentStrategy.ExecutePaymentAsync(order);
 
-                if (paymentResult.IsSuccess)
+                if (retryCount == 3)
                 {
-                    order.SetState(new PaymentCompletedState());
-                    return Result.Success();
+                    order.SetState(new CanceledState());
+                    return Result.Failure("Falha no processamento do pagamento após 3 tentativas.");
                 }
 
                 throw new Exception("Falha no processamento do pagamento.");

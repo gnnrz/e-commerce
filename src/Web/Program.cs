@@ -7,6 +7,8 @@ using CleanArchitecture.Domain.State;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddMemoryCache();
+
 // Configurando o Serilog como Logger
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration) 

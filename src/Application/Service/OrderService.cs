@@ -4,19 +4,25 @@ using CleanArchitecture.Domain.Interface;
 using CleanArchitecture.Domain.State;
 using CSharpFunctionalExtensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
+
 namespace CleanArchitecture.Application.Service;
+
 public class OrderService
 {
     private readonly List<Order> _orders = new List<Order>();
     private readonly ILogger<OrderService> _logger;
     private readonly IValidator<Order> _orderValidator;
     private readonly OrderState _orderState;
+    private readonly IMemoryCache _cache;
+    private const string CacheKey = "ordersCache";
 
-    public OrderService(ILogger<OrderService> logger, IValidator<Order> orderValidator, OrderState orderState)
+    public OrderService(ILogger<OrderService> logger, IValidator<Order> orderValidator, OrderState orderState, IMemoryCache cache)
     {
         _logger = logger;
         _orderValidator = orderValidator;
         _orderState = orderState;
+        _cache = cache;
     }
 
     public async Task<Result<Order>> CreateOrderAsync(List<OrderItem> items)
@@ -33,6 +39,8 @@ public class OrderService
 
         order.Process();
         _orderState.AddOrder(order);
+
+        _cache.Set(CacheKey, _orderState.GetOrders(), TimeSpan.FromMinutes(5));
 
         _logger.LogInformation("Pedido {OrderId} realizado com sucesso. Detalhes do pedido: {@Order}", order.Id, order);
         return Result.Success(order);
@@ -60,9 +68,18 @@ public class OrderService
         return Task.FromResult(Maybe.From(order));
     }
 
-    public async Task<Result<IEnumerable<Order>>> GetAllOrdersAsync()
+    public Task<Result<IEnumerable<Order>>> GetAllOrdersAsync()
     {
-        return await Task.FromResult(Result.Success(_orderState.GetOrders().AsEnumerable()));
+        if (_cache.TryGetValue(CacheKey, out List<Order>? cachedOrders) && cachedOrders != null)
+        {
+            _logger.LogInformation("Retornando pedidos do cache.");
+            return Task.FromResult(Result.Success(cachedOrders.AsEnumerable()));
+        }
+
+        var orders = _orderState.GetOrders();
+        _cache.Set(CacheKey, orders, TimeSpan.FromMinutes(5)); 
+
+        return Task.FromResult(Result.Success(orders.AsEnumerable()));
     }
 
     public async Task<Result> CancelOrderAsync(int id)
@@ -74,8 +91,9 @@ public class OrderService
         var order = maybeOrder.Value;
         order.Cancel();
 
+        _cache.Set(CacheKey, _orderState.GetOrders(), TimeSpan.FromMinutes(5));
+
         _logger.LogInformation("Pedido {OrderId} foi cancelado com sucesso. Detalhes do pedido: {@Order}", order.Id, order);
         return Result.Success();
     }
 }
-
